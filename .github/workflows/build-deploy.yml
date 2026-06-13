@@ -1,0 +1,106 @@
+name: Build & Deploy via GitOps
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+
+jobs:
+  # ── Build & push both images ───────────────────────────────
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    outputs:
+      frontend-tag: ${{ steps.tags.outputs.frontend }}
+      api-tag: ${{ steps.tags.outputs.api }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Generate image tags
+        id: tags
+        run: |
+          SHA="${{ github.sha }}"
+          echo "frontend=${ECR_REGISTRY}/taskflow-frontend:${SHA::8}" >> $GITHUB_OUTPUT
+          echo "api=${ECR_REGISTRY}/taskflow-api:${SHA::8}" >> $GITHUB_OUTPUT
+
+      - name: Build & push frontend
+        run: |
+          docker build -t ${{ steps.tags.outputs.frontend }} apps/frontend/
+          docker push ${{ steps.tags.outputs.frontend }}
+
+      - name: Build & push API
+        run: |
+          docker build -t ${{ steps.tags.outputs.api }} apps/api/
+          docker push ${{ steps.tags.outputs.api }}
+
+  # ── Update K8s manifests — ArgoCD picks up the change ──────
+  # This is the GitOps pattern: CI updates Git, ArgoCD deploys
+  update-manifests:
+    name: Update Image Tags in Git
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine overlay path
+        id: env
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "overlay=prod" >> $GITHUB_OUTPUT
+          else
+            echo "overlay=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update image tags in Kustomize overlay
+        run: |
+          OVERLAY="k8s/overlays/${{ steps.env.outputs.overlay }}"
+          FRONTEND_TAG="${{ needs.build.outputs.frontend-tag }}"
+          API_TAG="${{ needs.build.outputs.api-tag }}"
+
+          # Update image tags using kustomize
+          cd ${OVERLAY}
+          # If using kustomize images directive, update it
+          # Or use sed to update the image references
+          sed -i "s|FRONTEND_IMAGE|${FRONTEND_TAG}|g" ../../base/frontend/deployment.yaml || true
+          sed -i "s|API_IMAGE|${API_TAG}|g" ../../base/api/deployment.yaml || true
+
+          echo "Updated images:"
+          echo "  frontend: ${FRONTEND_TAG}"
+          echo "  api:      ${API_TAG}"
+
+      - name: Commit & push manifest changes
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/
+          git diff --staged --quiet || git commit -m \
+            "chore: update image tags [skip ci]
+
+            frontend: ${{ needs.build.outputs.frontend-tag }}
+            api:      ${{ needs.build.outputs.api-tag }}
+            env:      ${{ steps.env.outputs.overlay }}
+            sha:      ${{ github.sha }}"
+          git push
+
+      # ArgoCD detects the Git change and syncs automatically
+      # No need to trigger ArgoCD manually — that's the GitOps magic

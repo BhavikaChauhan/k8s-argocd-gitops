@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+type: Opaque
+# In real deployments, use Sealed Secrets or AWS Secrets Manager
+# These are base64 encoded — decode: echo "dGFza2Zsb3c=" | base64 -d
+data:
+  POSTGRES_USER:     dGFza2Zsb3c=       # taskflow
+  POSTGRES_PASSWORD: Y2hhbmdlbWU=       # changeme  ← change in prod!
+  POSTGRES_DB:       dGFza2Zsb3c=       # taskflow
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+data:
+  POSTGRES_DB: "taskflow"
+  # Init SQL — runs on first start
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS tasks (
+      id        SERIAL PRIMARY KEY,
+      title     TEXT NOT NULL,
+      status    TEXT DEFAULT 'todo',
+      priority  TEXT DEFAULT 'medium',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+---
+# StatefulSet — keeps pod identity stable (important for databases)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+    tier: database
+spec:
+  serviceName: postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tier: database
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+            - configMapRef:
+                name: postgres-config
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "taskflow", "-d", "taskflow"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "taskflow", "-d", "taskflow"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          # Persistent storage — data survives pod restarts
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres
+  # PVC template — Kubernetes creates this automatically per replica
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Headless service for StatefulSet DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+spec:
+  selector:
+    app: postgres
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  clusterIP: None   # Headless — lets StatefulSet manage DNS

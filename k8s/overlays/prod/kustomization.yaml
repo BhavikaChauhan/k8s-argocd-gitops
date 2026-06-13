@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: taskflow-prod
+
+resources:
+  - ../../base/database
+  - ../../base/api
+  - ../../base/frontend
+  - ../../base/ingress.yaml
+
+# Prod: full replicas, tighter resource limits
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        replicas: 2
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+      spec:
+        replicas: 2
+
+commonLabels:
+  environment: prod
+
+configMapGenerator:
+  - name: api-config
+    behavior: merge
+    literals:
+      - NODE_ENV=production

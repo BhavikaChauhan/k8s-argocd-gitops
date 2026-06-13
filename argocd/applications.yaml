@@ -1,0 +1,60 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: taskflow-dev
+  namespace: argocd
+  # Auto-delete child resources when this Application is deleted
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  # Where to pull the manifests from
+  source:
+    repoURL: https://github.com/BhavikaChauhan/k8s-argocd-gitops
+    targetRevision: HEAD
+    path: k8s/overlays/dev    # ← Kustomize overlay path
+
+  # Where to deploy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: taskflow-dev
+
+  syncPolicy:
+    automated:
+      prune: true        # Delete resources removed from Git
+      selfHeal: true     # Auto-fix manual changes (drift correction)
+    syncOptions:
+      - CreateNamespace=true     # Auto-create namespace
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: taskflow-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/BhavikaChauhan/k8s-argocd-gitops
+    targetRevision: HEAD
+    path: k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: taskflow-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true     # ← This is the magic: any manual kubectl change
+    syncOptions:         #   gets reverted back to what's in Git
+      - CreateNamespace=true
