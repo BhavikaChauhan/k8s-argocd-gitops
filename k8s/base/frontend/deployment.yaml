@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: FRONTEND_IMAGE   # Replaced by CI/CD pipeline
+          image: bhavika802/taskflow-frontend:v1 .   # Replaced by CI/CD pipeline
           ports:
             - containerPort: 80
           # Liveness probe — restart if app hangs
