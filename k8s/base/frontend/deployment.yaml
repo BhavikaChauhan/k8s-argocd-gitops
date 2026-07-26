@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: bhavika802/taskflow-frontend:v1
+          image: 
           ports:
             - containerPort: 80
           livenessProbe:
