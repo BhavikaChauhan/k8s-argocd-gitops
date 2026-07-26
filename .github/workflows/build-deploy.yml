@@ -12,12 +12,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login to Docker Hub
-        run: echo "bhavika802" | docker login --username "bhavika802" --password-stdin
+      - name: Test login with hardcoded (will fail - no password)
+        continue-on-error: true
+        run: echo "intentionally_wrong" | docker login --username "bhavika802" --password-stdin
+
+      - name: Test login with token secret
+        run: echo "$DOCKER_PASSWORD" | docker login --username "bhavika802" --password-stdin
         env:
           DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Login real
-        run: echo "$DOCKER_PASSWORD" | docker login --username "bhavika802" --password-stdin
+      - name: Print token length
+        run: |
+          echo "Token length: ${#DOCKER_PASSWORD}"
         env:
           DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
