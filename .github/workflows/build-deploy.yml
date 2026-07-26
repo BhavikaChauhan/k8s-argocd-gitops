@@ -1,28 +1,76 @@
-name: CI
+name: Build & Deploy via GitOps
 
 on:
   push:
-    branches:
-      - main
+    branches: [main, develop]
 
 jobs:
-  build-and-push:
+  build:
+    name: Build & Push Images
     runs-on: ubuntu-latest
+    outputs:
+      frontend-tag: ${{ steps.tags.outputs.frontend }}
+      api-tag: ${{ steps.tags.outputs.api }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Test login with hardcoded (will fail - no password)
-        continue-on-error: true
-        run: echo "intentionally_wrong" | docker login --username "bhavika802" --password-stdin
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      - name: Test login with token secret
-        run: echo "$DOCKER_PASSWORD" | docker login --username "bhavika802" --password-stdin
-        env:
-          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Print token length
+      - name: Generate image tags
+        id: tags
         run: |
-          echo "Token length: ${#DOCKER_PASSWORD}"
-        env:
-          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+          SHA="${{ github.sha }}"
+          echo "frontend=${{ secrets.DOCKERHUB_USERNAME }}/taskflow-frontend:${SHA::8}" >> $GITHUB_OUTPUT
+          echo "api=${{ secrets.DOCKERHUB_USERNAME }}/taskflow-api:${SHA::8}" >> $GITHUB_OUTPUT
+
+      - name: Build & push frontend
+        run: |
+          docker build -t ${{ steps.tags.outputs.frontend }} apps/frontend/
+          docker push ${{ steps.tags.outputs.frontend }}
+
+      - name: Build & push API
+        run: |
+          docker build -t ${{ steps.tags.outputs.api }} apps/api/
+          docker push ${{ steps.tags.outputs.api }}
+
+  update-manifests:
+    name: Update Image Tags in Git
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "overlay=prod" >> $GITHUB_OUTPUT
+          else
+            echo "overlay=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update image tags in manifests
+        run: |
+          FRONTEND_TAG="${{ needs.build.outputs.frontend-tag }}"
+          API_TAG="${{ needs.build.outputs.api-tag }}"
+          sed -i "s|bhavika802/taskflow-frontend:.*|${FRONTEND_TAG}|g" k8s/base/frontend/deployment.yaml
+          sed -i "s|bhavika802/taskflow-api:.*|${API_TAG}|g" k8s/base/api/deployment.yaml
+          echo "frontend: ${FRONTEND_TAG}"
+          echo "api:      ${API_TAG}"
+
+      - name: Commit & push manifest changes
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/
+          git diff --staged --quiet || git commit -m "chore: update image tags [skip ci]
+
+          frontend: ${{ needs.build.outputs.frontend-tag }}
+          api:      ${{ needs.build.outputs.api-tag }}
+          env:      ${{ steps.env.outputs.overlay }}"
+          git push
