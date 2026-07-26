@@ -12,26 +12,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check secrets exist
-        run: |
-          echo "Username length: ${#DOCKER_USER}"
-          echo "Token length: ${#DOCKER_TOKEN}"
-        env:
-          DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKER_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Login to Docker Hub
-        run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login --username "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+        run: echo "bhavika802" | docker login --username "bhavika802" --password-stdin
+        env:
+          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push frontend
-        run: |
-          TAG="bhavika802/taskflow-frontend:${{ github.sha }}"
-          docker build -t $TAG apps/frontend/
-          docker push $TAG
-
-      - name: Build and push API
-        run: |
-          TAG="bhavika802/taskflow-api:${{ github.sha }}"
-          docker build -t $TAG apps/api/
-          docker push $TAG
+      - name: Login real
+        run: echo "$DOCKER_PASSWORD" | docker login --username "bhavika802" --password-stdin
+        env:
+          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
