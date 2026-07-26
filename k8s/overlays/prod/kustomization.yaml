@@ -7,9 +7,13 @@ resources:
   - ../../base/database
   - ../../base/api
   - ../../base/frontend
-  - ../../base/ingress.yaml
+  - ../../base/ingress
 
-# Prod: full replicas, tighter resource limits
+labels:
+  - pairs:
+      environment: prod
+    includeSelectors: false
+
 patches:
   - patch: |-
       apiVersion: apps/v1
@@ -25,9 +29,6 @@ patches:
         name: api
       spec:
         replicas: 2
-
-commonLabels:
-  environment: prod
 
 configMapGenerator:
   - name: api-config

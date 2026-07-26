@@ -7,9 +7,13 @@ resources:
   - ../../base/database
   - ../../base/api
   - ../../base/frontend
-  - ../../base/ingress.yaml
+  - ../../base/ingress
 
-# Dev: scale down to save resources
+labels:
+  - pairs:
+      environment: dev
+    includeSelectors: false
+
 patches:
   - patch: |-
       apiVersion: apps/v1
@@ -25,9 +29,6 @@ patches:
         name: api
       spec:
         replicas: 1
-
-commonLabels:
-  environment: dev
 
 configMapGenerator:
   - name: api-config
