@@ -6,7 +6,7 @@
 ![GitHub Actions](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?style=flat&logo=githubactions&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/DB-PostgreSQL_15-4169E1?style=flat&logo=postgresql&logoColor=white)
 
-3-service microservices app (Frontend + API + PostgreSQL) deployed on Kubernetes using **GitOps with ArgoCD** — push to Git, ArgoCD handles the rest. Includes HPA autoscaling, liveness/readiness probes, Kustomize overlays per environment, and zero-downtime rolling deploys.
+3-service microservices app (Frontend + API + PostgreSQL) deployed on K8s using **GitOps with ArgoCD** — push to Git, ArgoCD handles the rest. Includes HPA autoscaling, liveness/readiness probes, Kustomize overlays per environment, and zero-downtime rolling deploys.
 
 > 🎯 **Portfolio demo** — this is exactly what I deliver to clients for Docker/K8s deployment projects.
 
